@@ -2702,16 +2702,24 @@ _bfd_elf_init_reloc_shdr (bfd *abfd,
   rel_hdr = bfd_zalloc (abfd, amt);
   reldata->hdr = rel_hdr;
 
-  amt = sizeof ".rela" + strlen (asect->name);
-  name = (char *) bfd_alloc (abfd, amt);
-  if (name == NULL)
-    return FALSE;
-  sprintf (name, "%s%s", use_rela_p ? ".rela" : ".rel", asect->name);
-  rel_hdr->sh_name =
-    (unsigned int) _bfd_elf_strtab_add (elf_shstrtab (abfd), name,
-					FALSE);
-  if (rel_hdr->sh_name == (unsigned int) -1)
-    return FALSE;
+  if ((asect->flags & SEC_ELF_COMPRESS) != 0)
+    /* If this section will be compressed, delay adding the reloc
+       setion name to section name section after it is compressed
+       in _bfd_elf_assign_file_positions_for_non_load.  */
+    rel_hdr->sh_name = (unsigned int) -1;
+  else
+    {
+      amt = sizeof ".rela" + strlen (asect->name);
+      name = (char *) bfd_alloc (abfd, amt);
+      if (name == NULL)
+	return FALSE;
+      sprintf (name, "%s%s", use_rela_p ? ".rela" : ".rel", asect->name);
+      rel_hdr->sh_name =
+	(unsigned int) _bfd_elf_strtab_add (elf_shstrtab (abfd), name,
+					    FALSE);
+      if (rel_hdr->sh_name == (unsigned int) -1)
+	return FALSE;
+    }
   rel_hdr->sh_type = use_rela_p ? SHT_RELA : SHT_REL;
   rel_hdr->sh_entsize = (use_rela_p
 			 ? bed->s->sizeof_rela
@@ -2773,32 +2781,20 @@ elf_fake_sections (bfd *abfd, asection *asect, void *fsarg)
       /* Set SEC_ELF_COMPRESS to indicate this section should be
 	 compressed.  */
       asect->flags |= SEC_ELF_COMPRESS;
-
-      if (arg->link_info->compress_debug != COMPRESS_DEBUG_GABI_ZLIB)
-	{
-	  /* If SHF_COMPRESSED isn't used, rename compressed DWARF
-	     debug section to .zdebug_*.  */
-	  unsigned int len = strlen (name);
-	  char *new_name = bfd_alloc (abfd, len + 2);
-	  if (new_name == NULL)
-	    {
-	      arg->failed = TRUE;
-	      return;
-	    }
-	  new_name[0] = '.';
-	  new_name[1] = 'z';
-	  memcpy (new_name + 2, name + 1, len);
-	  bfd_rename_section (abfd, asect, new_name);
-	  name = asect->name;
-	}
+      /* If this section will be compressed, delay adding setion
+	 name to section name section after it is compressed in
+	 _bfd_elf_assign_file_positions_for_non_load.  */
+      this_hdr->sh_name = (unsigned int) -1;
     }
-
-  this_hdr->sh_name = (unsigned int) _bfd_elf_strtab_add (elf_shstrtab (abfd),
-							  name, FALSE);
-  if (this_hdr->sh_name == (unsigned int) -1)
+  else
     {
-      arg->failed = TRUE;
-      return;
+      this_hdr->sh_name = (unsigned int) _bfd_elf_strtab_add (elf_shstrtab (abfd),
+							      name, FALSE);
+      if (this_hdr->sh_name == (unsigned int) -1)
+	{
+	  arg->failed = TRUE;
+	  return;
+	}
     }
 
   /* Don't clear sh_flags. Assembler may set additional bits.  */
@@ -3210,11 +3206,13 @@ assign_section_numbers (bfd *abfd, struct bfd_link_info *link_info)
 
       if (d->this_hdr.sh_type != SHT_GROUP)
 	d->this_idx = section_number++;
-      _bfd_elf_strtab_addref (elf_shstrtab (abfd), d->this_hdr.sh_name);
+      if (d->this_hdr.sh_name != (unsigned int) -1)
+	_bfd_elf_strtab_addref (elf_shstrtab (abfd), d->this_hdr.sh_name);
       if (d->rel.hdr)
 	{
 	  d->rel.idx = section_number++;
-	  _bfd_elf_strtab_addref (elf_shstrtab (abfd), d->rel.hdr->sh_name);
+	  if (d->rel.hdr->sh_name != (unsigned int) -1)
+	    _bfd_elf_strtab_addref (elf_shstrtab (abfd), d->rel.hdr->sh_name);
 	}
       else
 	d->rel.idx = 0;
@@ -3222,7 +3220,8 @@ assign_section_numbers (bfd *abfd, struct bfd_link_info *link_info)
       if (d->rela.hdr)
 	{
 	  d->rela.idx = section_number++;
-	  _bfd_elf_strtab_addref (elf_shstrtab (abfd), d->rela.hdr->sh_name);
+	  if (d->rela.hdr->sh_name != (unsigned int) -1)
+	    _bfd_elf_strtab_addref (elf_shstrtab (abfd), d->rela.hdr->sh_name);
 	}
       else
 	d->rela.idx = 0;
@@ -3259,9 +3258,6 @@ assign_section_numbers (bfd *abfd, struct bfd_link_info *link_info)
 			  abfd, section_number);
       return FALSE;
     }
-
-  _bfd_elf_strtab_finalize (elf_shstrtab (abfd));
-  t->shstrtab_hdr.sh_size = _bfd_elf_strtab_size (elf_shstrtab (abfd));
 
   elf_numsections (abfd) = section_number;
   elf_elfheader (abfd)->e_shnum = section_number;
@@ -3481,9 +3477,6 @@ assign_section_numbers (bfd *abfd, struct bfd_link_info *link_info)
   for (secn = 1; secn < section_number; ++secn)
     if (i_shdrp[secn] == NULL)
       i_shdrp[secn] = i_shdrp[0];
-    else
-      i_shdrp[secn]->sh_name = _bfd_elf_strtab_offset (elf_shstrtab (abfd),
-						       i_shdrp[secn]->sh_name);
   return TRUE;
 }
 
@@ -3740,7 +3733,7 @@ _bfd_elf_compute_section_file_positions (bfd *abfd,
   shstrtab_hdr->sh_entsize = 0;
   shstrtab_hdr->sh_link = 0;
   shstrtab_hdr->sh_info = 0;
-  /* sh_offset is set in assign_file_positions_except_relocs.  */
+  /* sh_offset is set in _bfd_elf_assign_file_positions_for_non_load.  */
   shstrtab_hdr->sh_addralign = 1;
 
   if (!assign_file_positions_except_relocs (abfd, link_info))
@@ -5152,7 +5145,8 @@ assign_file_positions_for_non_load_sections (bfd *abfd,
 		   /* Compress DWARF debug sections.  */
 	       || hdr == i_shdrpp[elf_onesymtab (abfd)]
 	       || hdr == i_shdrpp[elf_symtab_shndx (abfd)]
-	       || hdr == i_shdrpp[elf_strtab_sec (abfd)])
+	       || hdr == i_shdrpp[elf_strtab_sec (abfd)]
+	       || hdr == i_shdrpp[elf_shstrtab_sec (abfd)])
 	hdr->sh_offset = -1;
       else
 	off = _bfd_elf_assign_file_position_for_section (hdr, off, TRUE);
@@ -5404,7 +5398,8 @@ assign_file_positions_except_relocs (bfd *abfd,
 		  /* Compress DWARF debug sections.  */
 	      || i == elf_onesymtab (abfd)
 	      || i == elf_symtab_shndx (abfd)
-	      || i == elf_strtab_sec (abfd))
+	      || i == elf_strtab_sec (abfd)
+	      || i == elf_shstrtab_sec (abfd))
 	    {
 	      hdr->sh_offset = -1;
 	    }
@@ -5560,7 +5555,7 @@ _bfd_elf_assign_file_positions_for_non_load (bfd *abfd)
 {
   file_ptr off;
   unsigned int i, num_sec;
-  Elf_Internal_Shdr **shdrpp;
+  Elf_Internal_Shdr **shdrpp, *hdr;
   Elf_Internal_Ehdr *i_ehdrp;
   const struct elf_backend_data *bed;
 
@@ -5574,21 +5569,78 @@ _bfd_elf_assign_file_positions_for_non_load (bfd *abfd)
       shdrp = *shdrpp;
       if (shdrp->sh_offset == -1)
 	{
+	  asection *sec = shdrp->bfd_section;
 	  bfd_boolean is_rel = (shdrp->sh_type == SHT_REL
 				|| shdrp->sh_type == SHT_RELA);
 	  if (is_rel
-	      || (shdrp->bfd_section != NULL
-		  && (shdrp->bfd_section->flags & SEC_ELF_COMPRESS)))
+	      || (sec != NULL && (sec->flags & SEC_ELF_COMPRESS)))
 	    {
 	      if (!is_rel)
 		{
+		  const char *name = sec->name;
+		  char *new_name;
+		  unsigned int len = strlen (name);
+		  struct bfd_elf_section_data *d;
+
 		  /* Compress DWARF debug sections.  */
-		  if (!bfd_compress_section (abfd, shdrp->bfd_section,
+		  if (!bfd_compress_section (abfd, sec,
 					     shdrp->contents))
 		    return FALSE;
+
+		  if (sec->compress_status == COMPRESS_SECTION_DONE
+		      && (abfd->flags & BFD_COMPRESS_GABI) == 0)
+		    {
+		      /* If section is compressed with zlib-gnu, add
+			 .zdebug_* to section name section.  */
+		      new_name = bfd_alloc (abfd, len + 2);
+		      if (new_name == NULL)
+			return FALSE;
+		      new_name[0] = '.';
+		      new_name[1] = 'z';
+		      memcpy (new_name + 2, name + 1, len);
+		      name = new_name;
+		    }
+		  /* Add setion name to section name section.  */
+		  if (shdrp->sh_name != (unsigned int) -1)
+		    abort ();
+		  shdrp->sh_name
+		    = (unsigned int) _bfd_elf_strtab_add (elf_shstrtab (abfd),
+							  name, FALSE);
+		  d = elf_section_data (sec);
+
+		  /* Add reloc setion name to section name section.  */
+		  if (d->rel.hdr)
+		    {
+		       if (d->rel.hdr->sh_name != (unsigned int) -1)
+			 abort ();
+		      new_name = bfd_alloc (abfd, sizeof ".rel" + len);
+		      if (name == NULL)
+			return FALSE;
+		      memcpy (new_name, ".rel", sizeof ".rel");
+		      memcpy (new_name + sizeof ".rel" - 1, name, len + 1);
+		      d->rel.hdr->sh_name
+			= (unsigned int) _bfd_elf_strtab_add (elf_shstrtab (abfd),
+							      new_name,
+							      FALSE);
+		    }
+		  if (d->rela.hdr)
+		    {
+		       if (d->rela.hdr->sh_name != (unsigned int) -1)
+			 abort ();
+		      new_name = bfd_alloc (abfd, sizeof ".rela" + len);
+		      if (name == NULL)
+			return FALSE;
+		      memcpy (new_name, ".rela", sizeof ".rela");
+		      memcpy (new_name + sizeof ".rela" - 1, name, len + 1);
+		      d->rela.hdr->sh_name
+			= (unsigned int) _bfd_elf_strtab_add (elf_shstrtab (abfd),
+							      new_name,
+							      FALSE);
+		    }
+
 		  /* Update section size and contents.  */
-		  shdrp->sh_size = shdrp->bfd_section->size;
-		  shdrp->contents = shdrp->bfd_section->contents;
+		  shdrp->sh_size = sec->size;
+		  shdrp->contents = sec->contents;
 		  shdrp->bfd_section->contents = NULL;
 		}
 	      off = _bfd_elf_assign_file_position_for_section (shdrp,
@@ -5598,12 +5650,20 @@ _bfd_elf_assign_file_positions_for_non_load (bfd *abfd)
 	}
     }
 
-/* Place the section headers.  */
+  /* Place the section headers.  */
   i_ehdrp = elf_elfheader (abfd);
   bed = get_elf_backend_data (abfd);
   off = align_file_position (off, 1 << bed->s->log_file_align);
   i_ehdrp->e_shoff = off;
   off += i_ehdrp->e_shnum * i_ehdrp->e_shentsize;
+  elf_next_file_pos (abfd) = off;
+
+  /* Place section name section after DWARF debug sections have been
+     compressed.  */
+  _bfd_elf_strtab_finalize (elf_shstrtab (abfd));
+  hdr = &elf_tdata (abfd)->shstrtab_hdr;
+  hdr->sh_size = _bfd_elf_strtab_size (elf_shstrtab (abfd));
+  off = _bfd_elf_assign_file_position_for_section (hdr, off, TRUE);
   elf_next_file_pos (abfd) = off;
 
   return TRUE;
@@ -5636,6 +5696,9 @@ _bfd_elf_write_object_contents (bfd *abfd)
   num_sec = elf_numsections (abfd);
   for (count = 1; count < num_sec; count++)
     {
+      i_shdrp[count]->sh_name
+	= _bfd_elf_strtab_offset (elf_shstrtab (abfd),
+				  i_shdrp[count]->sh_name);
       if (bed->elf_backend_section_processing)
 	(*bed->elf_backend_section_processing) (abfd, i_shdrp[count]);
       if (i_shdrp[count]->contents)
