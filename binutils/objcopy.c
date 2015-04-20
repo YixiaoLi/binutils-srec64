@@ -589,7 +589,7 @@ copy_usage (FILE *stream, int exit_status)
                                      listed in <file>\n\
      --srec-len <number>           Restrict the length of generated Srecords\n\
      --srec-forceS3                Restrict the type of generated Srecords to S3\n\
-     --srec-enable-64bit-addr [<type>]\n\
+     --srec-enable-64bit-addr=[<type>]\n\
                                    Generate Srecords with 64-bit address when necessary.\n\
                                    Default type is 4, which means S4 will be used.\n\
      --strip-symbols <file>        -N for all symbols listed in <file>\n\

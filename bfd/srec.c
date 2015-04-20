@@ -982,8 +982,14 @@ srec_write_record (bfd *abfd,
     {
       if (!srecord_64bit_addr_enable)
         {
-		  (*_bfd_error_handler) (_("warning: 64-bit address 0x%016lx is ignored, \
-                      try to use --srec-enable-64bit-addr"), address);
+		  (*_bfd_error_handler) (_("warning: 64-bit address 0x%016lx is ignored, try to use --srec-enable-64bit-addr"), address);
+          return TRUE;
+        }
+
+      /* 64-bit Start Address not supported yet */
+      if (type >= 7 && type <= 9)
+        {
+		  (*_bfd_error_handler) (_("warning: 64-bit start address 0x%016lx not supported yet, ignored"), address);
           return TRUE;
         }
 
