@@ -292,6 +292,7 @@ enum command_line_switch
     OPTION_REDEFINE_SYMS,
     OPTION_SREC_LEN,
     OPTION_SREC_FORCES3,
+    OPTION_SREC_64BIT_ADDR,
     OPTION_STRIP_SYMBOLS,
     OPTION_STRIP_UNNEEDED_SYMBOL,
     OPTION_STRIP_UNNEEDED_SYMBOLS,
@@ -436,6 +437,7 @@ static struct option copy_options[] =
   {"set-start", required_argument, 0, OPTION_SET_START},
   {"srec-len", required_argument, 0, OPTION_SREC_LEN},
   {"srec-forceS3", no_argument, 0, OPTION_SREC_FORCES3},
+  {"srec-enable-64bit-addr", optional_argument, 0, OPTION_SREC_64BIT_ADDR},
   {"strip-all", no_argument, 0, 'S'},
   {"strip-debug", no_argument, 0, 'g'},
   {"strip-dwo", no_argument, 0, OPTION_STRIP_DWO},
@@ -477,6 +479,17 @@ extern unsigned int Chunk;
    This variable is declare in bfd/srec.c and can be toggled
    on by the --srec-forceS3 command line switch.  */
 extern bfd_boolean S3Forced;
+
+/* Generate Srecords containing a 64-bit address when necessary.
+   This variable is declared is srec.c and can be toggled
+   on by the --srec-enable-64bit-addr command line switch.  */
+extern bfd_boolean srecord_64bit_addr_enable;
+
+/* The type of an Srecord with a 64-bit address field.
+   It must NOT be the standard type ('0'-'3', '5'-'9').
+   This variable is declared is srec.c and can be modified 
+   by the --srec-enable-64bit-addr parameter.  */
+extern char srecord_64bit_addr_type;
 
 /* Forward declarations.  */
 static void setup_section (bfd *, asection *, void *);
@@ -576,6 +589,9 @@ copy_usage (FILE *stream, int exit_status)
                                      listed in <file>\n\
      --srec-len <number>           Restrict the length of generated Srecords\n\
      --srec-forceS3                Restrict the type of generated Srecords to S3\n\
+     --srec-enable-64bit-addr [<type>]\n\
+                                   Generate Srecords with 64-bit address when necessary.\n\
+                                   Default type is 4, which means S4 will be used.\n\
      --strip-symbols <file>        -N for all symbols listed in <file>\n\
      --strip-unneeded-symbols <file>\n\
                                    --strip-unneeded-symbol for all symbols listed\n\
@@ -4187,6 +4203,21 @@ copy_main (int argc, char *argv[])
 
 	case OPTION_SREC_FORCES3:
 	  S3Forced = TRUE;
+	  break;
+
+	case OPTION_SREC_64BIT_ADDR:
+      srecord_64bit_addr_enable = TRUE;
+      if (optarg)
+        {
+          if (strlen(optarg) == 1)
+            srecord_64bit_addr_type = optarg[0];
+          else
+	        fatal (_("error: type of Srecord with 64-bit address must be a single character"));
+          if (srecord_64bit_addr_type >= '0' && srecord_64bit_addr_type <= '9' 
+              && srecord_64bit_addr_type != '4')
+	        fatal (_("error: type of Srecord with 64-bit address must NOT be standard type S%c"), 
+                    srecord_64bit_addr_type);
+        }
 	  break;
 
 	case OPTION_STRIP_SYMBOLS:
